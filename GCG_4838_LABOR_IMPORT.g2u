@@ -1,0 +1,164 @@
+Program.Sub.Preflight.Start
+Program.External.Include.Library("JB0455.lib")
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.Try
+
+v.Local.sFileName.Declare(String)
+V.Local.i.Declare(Long)
+V.Local.sDir.Declare(String,"\\flintenergy.com\fileserver\JWW\JWW_Group_Files\Direct Upload\")
+
+f.ODBC.Connection!Con.OpenConnection(v.Ambient.PDSN,v.Ambient.PUser,v.Ambient.PPass)
+'Direct Labor import. 
+'File Layout 
+'Employee Number, Date Charge, Work Order Number, Work Order Suffix, Work Order Sequence, Work Center, Hours, Job Start Time, Job Stop Time
+
+'Grab all JobSuffixSeq for validation.
+f.Data.Dictionary.CreateFromSQL("JSS","Con","SELECT rtrim(rtrim(JOB) + rtrim(SUFFIX) + rtrim(SEQ)) AS JSS, 'Y' AS JSSVAL FROM V_JOB_OPERATIONS")
+f.Data.Dictionary.SetDefaultReturn("JSS","N")
+
+'Grab all Employee ID's and Names for Validation
+f.Data.Dictionary.CreateFromSQL("Employee","Con","SELECT EMPLOYEE, RTRIM(NAME) AS NAME_EMPLOYEE FROM V_EMPLOYEE_MSTR")
+f.Data.Dictionary.SetDefaultReturn("Employee","")
+
+F.Data.DataTable.Create("File",True)
+F.Data.DataTable.AddColumn("File","Employee","String")
+F.Data.DataTable.AddColumn("File","Start_Time","String")
+F.Data.DataTable.AddColumn("File","Stop_Time","String")
+F.Data.DataTable.AddColumn("File","Time","String")
+F.Data.DataTable.AddColumn("File","Job","String")
+F.Data.DataTable.AddColumn("File","Suffix","String")
+F.Data.DataTable.AddColumn("File","Seq","String")
+F.Data.DataTable.AddColumn("File","Charge_Date","String")
+F.Data.DataTable.AddColumn("File","Work_Center","String")
+
+'Add Expression Column for JSS
+f.Data.DataTable.AddExpressionColumn("File","JSS","String","TRIM(TRIM(Job) + TRIM(Suffix) + TRIM(Seq))")
+'Add column for JSS Check
+f.Data.DataTable.AddColumn("File","JSSCheck","String")
+'Add column for Employee Name
+f.Data.DataTable.AddColumn("File","Name_Employee","String")
+
+'Ask for the file to read in
+'********************************Change the Filter to the correct file Type once we know what it will be ***************************************
+'Function.Intrinsic.UI.ShowOpenFileDialog("\\flintenergy.com\fileserver\JWW\JWW_Group_Files\Direct Upload","*.xlsx | Excel Files",v.Local.sFileName)
+F.Intrinsic.UI.ShowOpenFileDialog("","Microsoft Excel[.xlsx]|*.xlsx|Microsoft Excel 97-2003[.xls]|*.xls",v.Local.sFileName)
+f.Intrinsic.Control.If(v.Local.sFileName,<>,"***CANCEL***")
+	f.Intrinsic.Control.CallSub(ReadFile,"FileName",v.Local.sFileName)
+f.Intrinsic.Control.EndIf
+'F.Intrinsic.File.GetFileList(V.Local.sDir,4,V.Local.sFileName)
+'F.Intrinsic.String.Split(V.Local.sFileName,":",V.Local.sFileName)
+
+'F.Intrinsic.Control.For(V.Local.i,0,V.Local.sFileName.UBound,1)
+'	F.Intrinsic.String.Build("{0}{1}",V.Local.sDir,V.Local.sFileName(V.Local.i),V.Local.sFileName(V.Local.i))
+'	F.Intrinsic.Control.CallSub(ReadFile,"FileName",v.Local.sFileName(V.Local.i))
+'F.Intrinsic.Control.Next(V.Local.i)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(TryCatch,"Sub",V.Ambient.CurrentSubroutine,"Error",V.Ambient.ErrorNumber,"Desc",V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.TryCatch.Start
+v.Local.sError.Declare(String)
+Function.Intrinsic.String.Concat("Project: GCG_4838_LABOR_IMPORT.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",v.Args.Sub,V.Ambient.NewLine,"Error Occurred ",V.Args.Error," with description ",v.Args.Desc,V.Local.sError)
+F.Intrinsic.UI.Msgbox(V.Local.sError)
+f.Intrinsic.Control.CallSub(UnloadSub)
+Program.Sub.TryCatch.End
+
+Program.Sub.UnloadSub.Start
+f.ODBC.Connection!Con.Close
+f.Intrinsic.Control.End
+Program.Sub.UnloadSub.End
+
+Program.Sub.ReadFile.Start
+F.Intrinsic.Control.Try
+
+v.Local.iCount.Declare(Long)
+v.Local.sInvalidFile.Declare(String)
+v.Local.sFilePath.Declare(String)
+v.Local.sFileName.Declare(String)
+v.Local.sRet.Declare(String)
+v.Local.sHours.Declare(String)
+v.Local.sChargeDate.Declare(String)
+v.Local.sStartTime.Declare(String)
+v.Local.sEndTime.Declare(String)
+v.Local.sFileContents.Declare(String)
+V.Local.i.Declare(Long)
+V.Local.sTemp.Declare(String)
+V.Local.dDate.Declare(Date)
+V.Local.sDelTek.Declare(String)
+V.Local.sSql.Declare(String)
+V.Local.sDateTime.Declare(String)
+
+'Read the passed file in.
+
+f.Automation.MSExcel.ReadSpreadsheet(v.Args.FileName,v.Local.sFileContents)
+
+F.Data.DataTable.DeleteRow("File")
+F.Data.DataTable.AcceptChanges("File")
+
+F.Data.DataTable.DeleteRow("JB0455")
+F.Data.DataTable.AcceptChanges("JB0455")
+
+F.Intrinsic.String.Split(V.Local.sFileContents,"$!$",V.Local.sFileContents)
+F.Intrinsic.Control.For(V.Local.i,1,V.Local.sFileContents.UBound,1)
+	F.Intrinsic.String.Split(V.Local.sFileContents(V.Local.i),"*!*",V.Local.sTemp)
+	F.Intrinsic.String.Split(V.Local.sTemp(1),"-",V.Local.sDelTek)
+	F.Intrinsic.String.Split(V.Local.sTemp(9),".",V.Local.sEndTime)
+	F.Intrinsic.String.Split(V.Local.sTemp(8)," ",V.Local.sDateTime)
+	F.Intrinsic.Control.If(V.Local.sEndTime.UBound,>,0)
+		F.Intrinsic.String.Build("{0} 8:00:00 AM",V.Local.sDateTime(0),V.Local.sDateTime)
+		F.Intrinsic.Date.DateAdd("H",V.Local.sEndTime(0),V.Local.sDateTime,V.Local.sEndTime)
+		F.Intrinsic.Math.Mult(V.Local.sEndTime(1),.6,V.Local.sEndTime(1))
+		F.Intrinsic.String.RPad(V.Local.sEndTime(1),"0",2,V.Local.sEndTime(1))
+		F.Intrinsic.Date.DateAdd("N",V.Local.sEndTime(1),V.Local.sEndTime,V.Local.sEndTime)
+	F.Intrinsic.Control.Else
+		F.Intrinsic.String.Build("{0} 8:00:00 AM",V.Local.sDateTime(0),V.Local.sDateTime)
+		F.Intrinsic.Date.DateAdd("H",V.Local.sEndTime(0),V.Local.sDateTime,V.Local.sEndTime)
+	F.Intrinsic.Control.EndIf
+	f.Intrinsic.String.Format(V.Local.sEndTime,"HHNN",v.Local.sEndTime)
+	f.Intrinsic.String.Format(V.Local.sTemp(8),"mmddyy",v.Local.sChargeDate)
+	F.Intrinsic.String.Format(V.Local.sTemp(6),"00000",V.Local.sTemp(6))
+	F.Data.DataTable.AddRow("File","Employee",V.Local.sTemp(6),"Start_Time","0800","Stop_Time",V.Local.sEndTime,"Time",V.Local.sTemp(9),"Job",V.Local.sDelTek(0),"Suffix",V.Local.sDelTek(1),"Seq",V.Local.sDelTek(2),"Work_Center",V.Local.sDelTek(3),"Charge_Date",V.Local.sChargeDate)
+F.Intrinsic.Control.Next(V.Local.i)
+
+'Fill From Dictionary for JSS Check and Employee name
+f.Data.DataTable.FillFromDictionary("File","JSS","JSS","JSSCheck")
+f.Data.DataTable.FillFromDictionary("File","Employee","Employee","Name_Employee")
+
+'Create View for valid informaiton
+f.Data.DataView.Create("File","FileView",22,"JSSCheck = 'Y' and Employee <> '' ","")
+
+'Loop through the valid information and add it to the lib import.
+f.Intrinsic.Control.For(v.Local.iCount,v.DataView.File!FileView.RowCount--)
+	f.Intrinsic.String.Format(v.DataView.File!FileView(v.Local.iCount).Time!FieldValFloat,"#0.00",v.Local.sHours)
+	'Add Rows to Lib DT
+	f.Data.DataTable.AddRow("JB0455","Job",v.DataView.File!FileView(v.Local.iCount).Job!FieldValTrim,"Suffix",v.DataView.File!FileView(v.Local.iCount).Suffix!FieldValTrim,"Seq",v.DataView.File!FileView(v.Local.iCount).Seq!FieldValTrim,"Date",v.DataView.File!FileView(v.Local.iCount).Charge_Date!FieldValTrim,"Employee",v.DataView.File!FileView(v.Local.iCount).Employee!FieldValTrim,"WC",v.DataView.File!FileView(v.Local.iCount).Work_Center!FieldValTrim,"Hours",v.Local.sHours,"StartTime",v.DataView.File!FileView(v.Local.iCount).Start_Time!FieldValTrim,"StopTime",v.DataView.File!FileView(v.Local.iCount).Stop_Time!FieldValTrim,"Closed","N","Indirect","D","RateType","R","GoodPcs",0.0,"ScrapPcs",0.0,"Reason","")
+f.Intrinsic.Control.Next(v.Local.iCount)
+
+f.Intrinsic.Control.CallSub("JB0455Sync")
+
+'Create View for Invalid information
+f.Data.DataView.Create("File","Invalid",22,"JSSCheck = 'N' or Employee = '' ","")
+
+'Export the values back to a file
+f.Data.DataView.ToDataTable("File","Invalid","Invalid")
+f.Intrinsic.File.GetPathFromFQN(v.Args.FileName,v.Local.sFilePath)
+f.Intrinsic.File.GetFileNameFromFQN(v.Args.FileName,v.Local.sFileName)
+f.Intrinsic.String.Build("{0}\{1}Error{2}",v.Local.sFilePath,v.Ambient.Now.FormatMMDDYYYYHHNNSS,v.Local.sFileName,v.Local.sInvalidFile)
+f.Intrinsic.Control.If(v.DataTable.Invalid.RowCount,>,0)
+	f.Data.DataView.Create("Invalid","invview")
+	f.Data.DataView.ToString("Invalid","invview",v.DataTable.Invalid.FieldNames,"*!*","$!$",v.Local.sFileContents)
+	f.Automation.MSExcel.WriteSpreadsheet(v.Local.sInvalidFile,v.Local.sFileContents)
+	'************************************Save to CSV could be changed to ToString and writespreadsheet if the file type is excel ************************************
+'	f.Data.DataTable.SaveToCSV("Invalid",v.Local.sInvalidFile,False)
+	'Let them know it errored and where it was saved to and named
+	f.Intrinsic.UI.Msgbox(v.Local.sInvalidFile,"Attention")
+f.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(TryCatch,"Sub",V.Ambient.CurrentSubroutine,"Error",V.Ambient.ErrorNumber,"Desc",V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.ReadFile.End
